@@ -1,0 +1,80 @@
+name: "Terraform Destroy — Destruir Infraestrutura"
+
+on:
+  workflow_dispatch:  # SOMENTE manual — nunca automático
+    inputs:
+      confirm:
+        description: 'Digite "destruir" para confirmar a destruição de TODOS os recursos'
+        required: true
+        default: ""
+      reason:
+        description: "Motivo da destruição (para log de auditoria)"
+        required: true
+        default: "fim do lab"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: "1.16.4"
+  AWS_REGION: "us-east-1"
+
+jobs:
+  terraform-destroy:
+    name: "Destroy"
+    runs-on: ubuntu-latest
+    environment: production  # Exige aprovação manual no GitHub
+
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - name: Verificar confirmação
+        if: github.event.inputs.confirm != 'destruir'
+        run: |
+          echo "❌ Confirmação inválida. Digite exatamente 'destruir' no campo confirm."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan Destroy (preview)
+        run: |
+          echo "⚠️  RECURSOS QUE SERÃO DESTRUÍDOS:"
+          terraform plan -destroy -no-color
+        env:
+          TF_VAR_region: ${{ env.AWS_REGION }}
+
+      - name: Log de auditoria
+        run: |
+          echo "🔴 DESTROY iniciado por: ${{ github.actor }}"
+          echo "📅 Data/hora: $(date -u)"
+          echo "📝 Motivo: ${{ github.event.inputs.reason }}"
+          echo "🔗 Run ID: ${{ github.run_id }}"
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+        env:
+          TF_VAR_region: ${{ env.AWS_REGION }}
+
+      - name: Confirmação de destruição
+        run: |
+          echo "✅ Infraestrutura destruída com sucesso."
+          echo "💡 Para recriar: abra um PR com suas alterações e faça o merge na main."

@@ -1,0 +1,45 @@
+# Terraform state — NUNCA commitar o state local
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Diretório de trabalho do Terraform
+.terraform/
+.terraform.lock.hcl
+
+# Planos de execução (podem conter secrets em texto puro)
+*.tfplan
+*.plan
+
+# Variáveis com valores sensíveis
+*.tfvars
+*.tfvars.json
+!example.tfvars   # Exceto o arquivo de exemplo
+
+# Arquivos de override (uso local)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Logs
+crash.log
+crash.*.log
+
+# Credenciais e segredos
+.env
+.env.*
+*.pem
+*.key
+
+# Arquivos de IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Linux
+*~
