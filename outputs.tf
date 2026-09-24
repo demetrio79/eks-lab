@@ -80,3 +80,32 @@ output "configure_kubectl" {
   description = "Comando para configurar o kubectl"
   value       = "aws eks update-kubeconfig --region ${var.region} --name ${aws_eks_cluster.main.name}"
 }
+
+# ============================================================
+# OIDC — GitHub Actions
+# ============================================================
+output "github_actions_role_arn" {
+  description = "ARN da IAM Role assumida pelo GitHub Actions via OIDC. Configure como secret AWS_ROLE_ARN no repositório GitHub."
+  value       = aws_iam_role.github_actions.arn
+}
+
+output "github_oidc_provider_arn" {
+  description = "ARN do OIDC provider do GitHub criado na AWS"
+  value       = aws_iam_openid_connect_provider.github.arn
+}
+
+output "github_actions_setup_instructions" {
+  description = "Instruções para configurar o GitHub após o apply"
+  value       = <<-EOT
+    Configure os seguintes secrets no repositório GitHub
+    (Settings → Secrets → Actions):
+
+      AWS_ACCOUNT_ID = ${data.aws_caller_identity.current.account_id}
+
+    O ARN da role para os workflows é:
+      ${aws_iam_role.github_actions.arn}
+
+    Após configurar, remova os secrets AWS_ACCESS_KEY_ID e
+    AWS_SECRET_ACCESS_KEY caso existam — não são mais necessários.
+  EOT
+}

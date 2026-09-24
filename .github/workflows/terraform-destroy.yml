@@ -1,7 +1,7 @@
 name: "Terraform Destroy — Destruir Infraestrutura"
 
 on:
-  workflow_dispatch:  # SOMENTE manual — nunca automático
+  workflow_dispatch:
     inputs:
       confirm:
         description: 'Digite "destruir" para confirmar a destruição de TODOS os recursos'
@@ -19,12 +19,13 @@ permissions:
 env:
   TF_VERSION: "1.16.4"
   AWS_REGION: "us-east-1"
+  AWS_ROLE_ARN: "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions"
 
 jobs:
   terraform-destroy:
     name: "Destroy"
     runs-on: ubuntu-latest
-    environment: production  # Exige aprovação manual no GitHub
+    environment: production
 
     defaults:
       run:
@@ -40,12 +41,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar credenciais AWS
+      # OIDC: sem chaves estáticas — token temporário por execução
+      - name: Configurar credenciais AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          role-to-assume:    ${{ env.AWS_ROLE_ARN }}
+          role-session-name: github-actions-destroy-${{ github.run_id }}
+          aws-region:        ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -68,6 +70,7 @@ jobs:
           echo "📅 Data/hora: $(date -u)"
           echo "📝 Motivo: ${{ github.event.inputs.reason }}"
           echo "🔗 Run ID: ${{ github.run_id }}"
+          echo "🔐 Autenticação: OIDC (sem chaves estáticas)"
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve

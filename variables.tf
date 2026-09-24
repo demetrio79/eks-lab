@@ -75,3 +75,9 @@ variable "karpenter_version" {
   type        = string
   default     = "0.37.0"
 }
+
+variable "tf_state_bucket" {
+  description = "Nome do bucket S3 que armazena o state do Terraform (usado na política OIDC)"
+  type        = string
+  default     = "SEU-BUCKET-TFSTATE"
+}
