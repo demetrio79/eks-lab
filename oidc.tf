@@ -54,13 +54,15 @@ resource "aws_iam_role" "github_actions" {
           }
           StringLike = {
             # Restringe ao seu repositório específico.
-            # "ref:refs/heads/main"  → só a branch main (apply/destroy)
-            # "ref:refs/pull/*"      → qualquer PR (para rodar o plan)
-            # Use "*" só se quiser permitir todas as branches (menos seguro)
+            # "ref:refs/heads/main"       → branch main (apply após merge)
+            # "ref:refs/pull/*"           → qualquer PR (para rodar o plan)
+            # "ref:refs/heads/feat/*"     → branches de feature
+            # "environment:production"    → jobs com environment configurado (apply/destroy)
             "token.actions.githubusercontent.com:sub" = [
               "repo:demetrio79/eks-lab:ref:refs/heads/main",
               "repo:demetrio79/eks-lab:ref:refs/pull/*",
               "repo:demetrio79/eks-lab:ref:refs/heads/feat/*",
+              "repo:demetrio79/eks-lab:environment:production",
             ]
           }
         }
