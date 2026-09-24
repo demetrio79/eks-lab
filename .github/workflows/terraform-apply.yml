@@ -17,7 +17,6 @@ on:
 
   workflow_dispatch:
 
-# id-token: write é necessário para OIDC
 permissions:
   contents: read
   id-token: write
@@ -26,6 +25,7 @@ permissions:
 env:
   TF_VERSION: "1.16.4"
   AWS_REGION: "us-east-1"
+  AWS_ROLE_ARN: "arn:aws:iam::688066489200:role/eks-lab-github-actions"
 
 jobs:
   # ============================================================
@@ -36,30 +36,15 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
-    defaults:
-      run:
-        working-directory: .
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Bootstrap (primeiro apply): usa chaves estáticas
-      # Se AWS_ACCESS_KEY_ID não estiver definido, usa OIDC automaticamente
-      - name: Autenticar AWS com chaves estáticas (bootstrap)
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+      - name: Autenticar AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      - name: Autenticar AWS com OIDC (após bootstrap)
-        if: ${{ secrets.AWS_ACCESS_KEY_ID == '' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume:    arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions
-          role-session-name: github-actions-plan-${{ github.run_id }}
+          role-to-assume:    ${{ env.AWS_ROLE_ARN }}
+          role-session-name: github-plan-${{ github.run_id }}
           aws-region:        ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -121,6 +106,7 @@ jobs:
             </details>
 
             > ⚠️ O \`terraform apply\` só será executado **após o merge na branch main**.
+            > 🔐 Autenticação via **OIDC** — sem chaves estáticas.
             > *Disparado por @${{ github.actor }} — Run [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*`;
 
             const comments = await github.rest.issues.listComments({
@@ -158,28 +144,15 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     environment: production
 
-    defaults:
-      run:
-        working-directory: .
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Autenticar AWS com chaves estáticas (bootstrap)
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+      - name: Autenticar AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      - name: Autenticar AWS com OIDC (após bootstrap)
-        if: ${{ secrets.AWS_ACCESS_KEY_ID == '' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume:    arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions
-          role-session-name: github-actions-apply-${{ github.run_id }}
+          role-to-assume:    ${{ env.AWS_ROLE_ARN }}
+          role-session-name: github-apply-${{ github.run_id }}
           aws-region:        ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
