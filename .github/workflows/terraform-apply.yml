@@ -17,10 +17,7 @@ on:
 
   workflow_dispatch:
 
-# Permissões necessárias para OIDC:
-# - id-token: write  → solicitar token JWT ao GitHub
-# - contents: read   → fazer checkout do código
-# - pull-requests: write → comentar o plan no PR
+# id-token: write é necessário para OIDC
 permissions:
   contents: read
   id-token: write
@@ -29,8 +26,6 @@ permissions:
 env:
   TF_VERSION: "1.16.4"
   AWS_REGION: "us-east-1"
-  # ARN da role criada pelo oidc.tf — atualize após o primeiro apply
-  AWS_ROLE_ARN: "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions"
 
 jobs:
   # ============================================================
@@ -49,12 +44,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # OIDC: troca o JWT do GitHub por credenciais temporárias da AWS
-      # Não há chaves estáticas — as credenciais expiram em 15 minutos
-      - name: Configurar credenciais AWS (OIDC)
+      # Bootstrap (primeiro apply): usa chaves estáticas
+      # Se AWS_ACCESS_KEY_ID não estiver definido, usa OIDC automaticamente
+      - name: Autenticar AWS com chaves estáticas (bootstrap)
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume:    ${{ env.AWS_ROLE_ARN }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Autenticar AWS com OIDC (após bootstrap)
+        if: ${{ secrets.AWS_ACCESS_KEY_ID == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume:    arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions
           role-session-name: github-actions-plan-${{ github.run_id }}
           aws-region:        ${{ env.AWS_REGION }}
 
@@ -117,7 +121,6 @@ jobs:
             </details>
 
             > ⚠️ O \`terraform apply\` só será executado **após o merge na branch main**.
-            > 🔐 Autenticação via **OIDC** — sem chaves estáticas.
             > *Disparado por @${{ github.actor }} — Run [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*`;
 
             const comments = await github.rest.issues.listComments({
@@ -163,10 +166,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar credenciais AWS (OIDC)
+      - name: Autenticar AWS com chaves estáticas (bootstrap)
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume:    ${{ env.AWS_ROLE_ARN }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Autenticar AWS com OIDC (após bootstrap)
+        if: ${{ secrets.AWS_ACCESS_KEY_ID == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume:    arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions
           role-session-name: github-actions-apply-${{ github.run_id }}
           aws-region:        ${{ env.AWS_REGION }}
 
