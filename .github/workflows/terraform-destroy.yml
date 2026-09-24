@@ -41,11 +41,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # OIDC: sem chaves estáticas — token temporário por execução
-      - name: Configurar credenciais AWS (OIDC)
+      - name: Autenticar AWS com chaves estáticas (bootstrap)
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume:    ${{ env.AWS_ROLE_ARN }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Autenticar AWS com OIDC (após bootstrap)
+        if: ${{ secrets.AWS_ACCESS_KEY_ID == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume:    arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions
           role-session-name: github-actions-destroy-${{ github.run_id }}
           aws-region:        ${{ env.AWS_REGION }}
 
