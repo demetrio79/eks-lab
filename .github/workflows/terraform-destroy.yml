@@ -19,17 +19,13 @@ permissions:
 env:
   TF_VERSION: "1.16.4"
   AWS_REGION: "us-east-1"
-  AWS_ROLE_ARN: "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions"
+  AWS_ROLE_ARN: "arn:aws:iam::688066489200:role/eks-lab-github-actions"
 
 jobs:
   terraform-destroy:
     name: "Destroy"
     runs-on: ubuntu-latest
     environment: production
-
-    defaults:
-      run:
-        working-directory: .
 
     steps:
       - name: Verificar confirmação
@@ -41,20 +37,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Autenticar AWS com chaves estáticas (bootstrap)
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+      - name: Autenticar AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      - name: Autenticar AWS com OIDC (após bootstrap)
-        if: ${{ secrets.AWS_ACCESS_KEY_ID == '' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume:    arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/eks-lab-github-actions
-          role-session-name: github-actions-destroy-${{ github.run_id }}
+          role-to-assume:    ${{ env.AWS_ROLE_ARN }}
+          role-session-name: github-destroy-${{ github.run_id }}
           aws-region:        ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -66,9 +53,7 @@ jobs:
         run: terraform init
 
       - name: Terraform Plan Destroy (preview)
-        run: |
-          echo "⚠️  RECURSOS QUE SERÃO DESTRUÍDOS:"
-          terraform plan -destroy -no-color
+        run: terraform plan -destroy -no-color
         env:
           TF_VAR_region: ${{ env.AWS_REGION }}
 
@@ -78,14 +63,14 @@ jobs:
           echo "📅 Data/hora: $(date -u)"
           echo "📝 Motivo: ${{ github.event.inputs.reason }}"
           echo "🔗 Run ID: ${{ github.run_id }}"
-          echo "🔐 Autenticação: OIDC (sem chaves estáticas)"
+          echo "🔐 Autenticação: OIDC"
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve
         env:
           TF_VAR_region: ${{ env.AWS_REGION }}
 
-      - name: Confirmação de destruição
+      - name: Confirmação
         run: |
           echo "✅ Infraestrutura destruída com sucesso."
-          echo "💡 Para recriar: abra um PR com suas alterações e faça o merge na main."
+          echo "💡 Para recriar: abra um PR e faça merge na main."
