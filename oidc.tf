@@ -53,9 +53,10 @@ resource "aws_iam_role" "github_actions" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            # Permite qualquer sub originado do repositório eks-lab.
-            # Cobre: branches, PRs, environments, workflow_dispatch, etc.
-            "token.actions.githubusercontent.com:sub" = "repo:demetrio79/eks-lab:*"
+            # Sub real do GitHub para contas pessoais inclui o user ID numérico.
+            # Formato: repo:<user>@<userID>/<repo>@<repoID>:<contexto>
+            # O wildcard cobre: branches, PRs, environments, workflow_dispatch
+            "token.actions.githubusercontent.com:sub" = "repo:demetrio79@18690185/eks-lab@1384428715:*"
           }
         }
       }
