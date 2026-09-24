@@ -385,31 +385,43 @@ resource "aws_iam_instance_profile" "karpenter" {
 }
 
 # ============================================================
-# aws-auth ConfigMap — permite que os nós do Karpenter
-# se registrem no cluster
+# aws-auth ConfigMap via kubectl
+# Permite que os nós do Karpenter se registrem no cluster.
+# Usa local-exec para evitar conexão ao cluster durante o plan.
 # ============================================================
-resource "kubernetes_config_map_v1_data" "aws_auth" {
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
-  }
+resource "terraform_data" "aws_auth" {
+  triggers_replace = [
+    aws_iam_role.node_group.arn,
+    aws_iam_role.karpenter.arn,
+    aws_eks_cluster.main.id,
+  ]
 
-  data = {
-    mapRoles = yamlencode([
-      {
-        rolearn  = aws_iam_role.node_group.arn
-        username = "system:node:{{EC2PrivateDNSName}}"
-        groups   = ["system:bootstrappers", "system:nodes"]
-      },
-      {
-        rolearn  = aws_iam_role.karpenter.arn
-        username = "system:node:{{EC2PrivateDNSName}}"
-        groups   = ["system:bootstrappers", "system:nodes"]
-      },
-    ])
-  }
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      aws eks update-kubeconfig --region ${var.region} --name ${aws_eks_cluster.main.name}
 
-  force = true
+      kubectl apply -f - <<EOF
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: aws-auth
+        namespace: kube-system
+      data:
+        mapRoles: |
+          - rolearn: ${aws_iam_role.node_group.arn}
+            username: system:node:{{EC2PrivateDNSName}}
+            groups:
+              - system:bootstrappers
+              - system:nodes
+          - rolearn: ${aws_iam_role.karpenter.arn}
+            username: system:node:{{EC2PrivateDNSName}}
+            groups:
+              - system:bootstrappers
+              - system:nodes
+      EOF
+    EOT
+  }
 
   depends_on = [aws_eks_node_group.main]
 }
@@ -465,112 +477,84 @@ resource "helm_release" "karpenter" {
   depends_on = [
     aws_eks_node_group.main,
     aws_iam_role_policy_attachment.karpenter,
-    kubernetes_config_map_v1_data.aws_auth,
+    terraform_data.aws_auth,
   ]
 }
 
 # ============================================================
-# EC2NodeClass — define qual AMI e configurações de rede usar
+# EC2NodeClass e NodePool via kubectl
+#
+# kubernetes_manifest tenta conectar ao cluster durante o plan,
+# o que falha quando o cluster ainda não existe.
+# Usamos null_resource + local-exec com kubectl apply para
+# aplicar os manifests somente após o cluster e o Karpenter
+# estarem prontos.
 # ============================================================
-resource "kubernetes_manifest" "ec2_node_class" {
-  manifest = {
-    apiVersion = "karpenter.k8s.aws/v1"
-    kind       = "EC2NodeClass"
-    metadata = {
-      name = "default"
-    }
-    spec = {
-      amiFamily = "AL2"
-      role      = aws_iam_role.node_group.name
+resource "terraform_data" "karpenter_manifests" {
+  triggers_replace = [
+    aws_eks_cluster.main.id,
+    helm_release.karpenter.id,
+  ]
 
-      subnetSelectorTerms = [
-        {
-          tags = {
-            "karpenter.sh/discovery" = var.cluster_name
-          }
-        }
-      ]
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      aws eks update-kubeconfig --region ${var.region} --name ${aws_eks_cluster.main.name}
 
-      securityGroupSelectorTerms = [
-        {
-          tags = {
-            "aws:eks:cluster-name" = var.cluster_name
-          }
-        }
-      ]
-
-      tags = {
-        "kubernetes.io/cluster/${var.cluster_name}" = "owned"
-        Project                                      = var.project
-      }
-    }
+      kubectl apply -f - <<EOF
+      apiVersion: karpenter.k8s.aws/v1
+      kind: EC2NodeClass
+      metadata:
+        name: default
+      spec:
+        amiFamily: AL2
+        role: ${aws_iam_role.node_group.name}
+        subnetSelectorTerms:
+          - tags:
+              karpenter.sh/discovery: ${var.cluster_name}
+        securityGroupSelectorTerms:
+          - tags:
+              aws:eks:cluster-name: ${var.cluster_name}
+        tags:
+          kubernetes.io/cluster/${var.cluster_name}: owned
+          Project: ${var.project}
+      ---
+      apiVersion: karpenter.sh/v1
+      kind: NodePool
+      metadata:
+        name: default
+      spec:
+        template:
+          spec:
+            nodeClassRef:
+              group: karpenter.k8s.aws
+              kind: EC2NodeClass
+              name: default
+            requirements:
+              - key: kubernetes.io/arch
+                operator: In
+                values: ["amd64"]
+              - key: kubernetes.io/os
+                operator: In
+                values: ["linux"]
+              - key: karpenter.sh/capacity-type
+                operator: In
+                values: ["spot", "on-demand"]
+              - key: node.kubernetes.io/instance-category
+                operator: In
+                values: ["t", "m", "c"]
+              - key: node.kubernetes.io/instance-generation
+                operator: Gt
+                values: ["2"]
+        limits:
+          cpu: "10"
+          memory: 40Gi
+        disruption:
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 30s
+      EOF
+    EOT
   }
 
   depends_on = [helm_release.karpenter]
-}
-
-# ============================================================
-# NodePool — define as restrições e limites dos nós
-# provisionados pelo Karpenter
-# ============================================================
-resource "kubernetes_manifest" "node_pool" {
-  manifest = {
-    apiVersion = "karpenter.sh/v1"
-    kind       = "NodePool"
-    metadata = {
-      name = "default"
-    }
-    spec = {
-      template = {
-        spec = {
-          nodeClassRef = {
-            group = "karpenter.k8s.aws"
-            kind  = "EC2NodeClass"
-            name  = "default"
-          }
-
-          requirements = [
-            {
-              key      = "kubernetes.io/arch"
-              operator = "In"
-              values   = ["amd64"]
-            },
-            {
-              key      = "kubernetes.io/os"
-              operator = "In"
-              values   = ["linux"]
-            },
-            {
-              key      = "karpenter.sh/capacity-type"
-              operator = "In"
-              values   = ["spot", "on-demand"] # Spot tem prioridade para reduzir custo no lab
-            },
-            {
-              key      = "node.kubernetes.io/instance-category"
-              operator = "In"
-              values   = ["t", "m", "c"] # Famílias permitidas
-            },
-            {
-              key      = "node.kubernetes.io/instance-generation"
-              operator = "Gt"
-              values   = ["2"]
-            },
-          ]
-        }
-      }
-
-      # Limites de recursos para evitar surpresas de custo no lab
-      limits = {
-        cpu    = "10"
-        memory = "40Gi"
-      }
-
-      disruption = {
-        consolidationPolicy = "WhenEmptyOrUnderutilized"
-        consolidateAfter    = "30s"
-      }
-    }
-  }
-
-  depends_on = [kubernetes_manifest.ec2_node_class]
 }
