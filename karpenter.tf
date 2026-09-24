@@ -217,10 +217,8 @@ resource "aws_iam_policy" "karpenter" {
           StringLike = {
             "aws:ResourceTag/karpenter.sh/nodepool" = "*"
           }
-          ForAllValues = {
-            StringEquals = {
-              "aws:TagKeys" = ["karpenter.sh/nodeclaim", "Name"]
-            }
+          "ForAllValues:StringEquals" = {
+            "aws:TagKeys" = ["karpenter.sh/nodeclaim", "Name"]
           }
         }
       },
