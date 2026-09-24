@@ -166,6 +166,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Debug JWT sub claim
+        run: |
+          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | \
+            python3 -c "import sys,json; print(json.load(sys.stdin)['value'])")
+          PAYLOAD=$(echo $TOKEN | cut -d. -f2)
+          echo "=== JWT Claims ==="
+          python3 -c "
+          import sys, base64, json
+          p = '$PAYLOAD'
+          p += '=' * (4 - len(p) % 4)
+          d = json.loads(base64.b64decode(p))
+          print('sub:', d.get('sub'))
+          print('aud:', d.get('aud'))
+          print('iss:', d.get('iss'))
+          "
+
       - name: Autenticar AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
