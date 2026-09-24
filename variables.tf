@@ -79,5 +79,5 @@ variable "karpenter_version" {
 variable "tf_state_bucket" {
   description = "Nome do bucket S3 que armazena o state do Terraform (usado na política OIDC)"
   type        = string
-  default     = "SEU-BUCKET-TFSTATE"
+  default     = "eks-lab-tfstate-688066489200"
 }

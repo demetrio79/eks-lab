@@ -16,7 +16,7 @@
 
 terraform {
   backend "s3" {
-    bucket = "SEU-BUCKET-TFSTATE"
+    bucket = "eks-lab-tfstate-688066489200"
     key    = "eks-lab/terraform.tfstate"
     region = "us-east-1"
   }
