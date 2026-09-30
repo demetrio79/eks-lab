@@ -499,6 +499,18 @@ resource "terraform_data" "karpenter_manifests" {
     command     = <<-EOT
       aws eks update-kubeconfig --region ${var.region} --name ${aws_eks_cluster.main.name}
 
+      # Aguardar os CRDs do Karpenter ficarem disponíveis
+      echo "Aguardando CRDs do Karpenter..."
+      for i in $(seq 1 20); do
+        if kubectl get crd ec2nodeclasses.karpenter.k8s.aws > /dev/null 2>&1 && \
+           kubectl get crd nodepools.karpenter.sh > /dev/null 2>&1; then
+          echo "CRDs prontos."
+          break
+        fi
+        echo "  tentativa $i/20 — aguardando 15s..."
+        sleep 15
+      done
+
       kubectl apply -f - <<EOF
       apiVersion: karpenter.k8s.aws/v1
       kind: EC2NodeClass
