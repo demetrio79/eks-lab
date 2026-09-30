@@ -286,9 +286,9 @@ resource "aws_iam_policy" "karpenter" {
         Resource = [aws_sqs_queue.karpenter.arn]
       },
       {
-        Sid    = "AllowPassingInstanceRole"
-        Effect = "Allow"
-        Action = ["iam:PassRole"]
+        Sid      = "AllowPassingInstanceRole"
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
         Resource = [aws_iam_role.node_group.arn]
         Condition = {
           StringEquals = {
@@ -297,9 +297,9 @@ resource "aws_iam_policy" "karpenter" {
         }
       },
       {
-        Sid    = "AllowScopedInstanceProfileCreation"
-        Effect = "Allow"
-        Action = ["iam:CreateInstanceProfile"]
+        Sid      = "AllowScopedInstanceProfileCreation"
+        Effect   = "Allow"
+        Action   = ["iam:CreateInstanceProfile"]
         Resource = ["*"]
         Condition = {
           StringEquals = {
@@ -312,9 +312,9 @@ resource "aws_iam_policy" "karpenter" {
         }
       },
       {
-        Sid    = "AllowScopedInstanceProfileTagActions"
-        Effect = "Allow"
-        Action = ["iam:TagInstanceProfile"]
+        Sid      = "AllowScopedInstanceProfileTagActions"
+        Effect   = "Allow"
+        Action   = ["iam:TagInstanceProfile"]
         Resource = ["*"]
         Condition = {
           StringEquals = {
@@ -355,9 +355,9 @@ resource "aws_iam_policy" "karpenter" {
         Resource = ["*"]
       },
       {
-        Sid    = "AllowAPIServerEndpointDiscovery"
-        Effect = "Allow"
-        Action = ["eks:DescribeCluster"]
+        Sid      = "AllowAPIServerEndpointDiscovery"
+        Effect   = "Allow"
+        Action   = ["eks:DescribeCluster"]
         Resource = ["arn:${local.partition}:eks:${var.region}:${local.account_id}:cluster/${var.cluster_name}"]
       },
     ]
@@ -505,7 +505,7 @@ resource "terraform_data" "karpenter_manifests" {
       metadata:
         name: default
       spec:
-        amiFamily: AL2
+        amiFamily: AL2023
         role: ${aws_iam_role.node_group.name}
         subnetSelectorTerms:
           - tags:
