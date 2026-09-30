@@ -24,20 +24,46 @@ us-east-1
 - [Helm](https://helm.sh/docs/intro/install/) >= 3
 - Credenciais AWS configuradas (`~/.aws/credentials`)
 
+---
+
+## 0. Configurar o OIDC do GitHub Actions (uma única vez)
+
+O OIDC provider, a IAM role e a policy do GitHub Actions ficam **fora do Terraform**.
+Isso garante que:
+- `terraform apply` não os sobrescreve
+- `terraform destroy` não os apaga
+
+Execute o script **uma vez** antes de qualquer outra etapa:
+
+```bash
+chmod +x setup-oidc.sh
+./setup-oidc.sh
+```
+
+O script é idempotente — pode ser executado novamente sem efeitos colaterais.
+
+Ao final, ele exibe o ARN da role. Configure como secret no repositório GitHub:
+
+```
+Settings → Secrets and variables → Actions → New repository secret
+
+  Nome : AWS_ROLE_ARN
+  Valor: arn:aws:iam::<ACCOUNT_ID>:role/eks-lab-github-actions
+```
+
+---
+
 ## 1. Criar o bucket S3 para o state
 
 ```bash
-# Crie o bucket (nome deve ser globalmente único)
 aws s3api create-bucket \
   --bucket meu-tfstate-eks-lab \
   --region us-east-1
 
-# Habilite versionamento (recomendado)
 aws s3api put-bucket-versioning \
   --bucket meu-tfstate-eks-lab \
   --versioning-configuration Status=Enabled
 
-# Bloqueie acesso público
 aws s3api put-public-access-block \
   --bucket meu-tfstate-eks-lab \
   --public-access-block-configuration \
@@ -46,12 +72,12 @@ aws s3api put-public-access-block \
 
 ## 2. Configurar o backend
 
-Edite `backend.tf` e substitua `SEU-BUCKET-TFSTATE` pelo nome do bucket criado:
+Edite `backend.tf` e substitua pelo nome do bucket criado:
 
 ```hcl
 terraform {
   backend "s3" {
-    bucket = "meu-tfstate-eks-lab"   # <-- seu bucket
+    bucket = "meu-tfstate-eks-lab"
     key    = "eks-lab/terraform.tfstate"
     region = "us-east-1"
   }
@@ -61,28 +87,17 @@ terraform {
 ## 3. Inicializar e aplicar
 
 ```bash
-# Inicializa providers e backend
 terraform init
-
-# Revisa o plano (nenhum recurso criado ainda)
 terraform plan
-
-# Aplica a infraestrutura (~15-20 minutos)
-terraform apply
+terraform apply   # ~15-20 minutos
 ```
 
 ## 4. Configurar o kubectl
 
-Após o `apply`, execute o comando exibido no output:
-
 ```bash
-# O comando exato estará no output "configure_kubectl"
 aws eks update-kubeconfig --region us-east-1 --name eks-lab
 
-# Verifique os nós
 kubectl get nodes
-
-# Verifique o Karpenter
 kubectl get pods -n karpenter
 kubectl get nodepools
 kubectl get ec2nodeclasses
@@ -90,27 +105,26 @@ kubectl get ec2nodeclasses
 
 ## 5. Variáveis customizáveis
 
-Crie um arquivo `terraform.tfvars` (ignorado pelo git) para sobrescrever defaults:
+Crie um arquivo `terraform.tfvars` (ignorado pelo git):
 
 ```hcl
-project         = "eks-lab"
-cluster_name    = "eks-lab"
-cluster_version = "1.30"
-
-# Instância do node group inicial (onde o Karpenter roda)
+project            = "eks-lab"
+cluster_name       = "eks-lab"
+cluster_version    = "1.30"
 node_instance_type = "t3.micro"
 node_desired_size  = 2
 node_min_size      = 1
 node_max_size      = 3
-
-# Versão do Karpenter
-karpenter_version = "0.37.0"
+karpenter_version  = "0.37.0"
 ```
+
+---
 
 ## Estrutura do projeto
 
 ```
 eks-lab/
+├── setup-oidc.sh   # Configura OIDC GitHub Actions via AWS CLI (rodar uma vez)
 ├── versions.tf     # Providers e versões requeridas
 ├── backend.tf      # Backend S3 para o state
 ├── variables.tf    # Todas as variáveis
@@ -121,7 +135,7 @@ eks-lab/
 └── .gitignore      # Exclui state e secrets do git
 ```
 
-## Recursos criados
+## Recursos gerenciados pelo Terraform
 
 | Recurso | Descrição |
 |---|---|
@@ -132,31 +146,50 @@ eks-lab/
 | EKS Cluster | Kubernetes 1.30, endpoint público + privado |
 | Node Group | 2x t3.micro nas subnets privadas |
 | Add-ons | CoreDNS, kube-proxy, VPC CNI, EKS Pod Identity |
-| OIDC Provider | Para IRSA |
+| OIDC Provider (EKS) | Para IRSA do Karpenter |
 | Karpenter | v0.37.0 via Helm, com NodePool e EC2NodeClass |
 | SQS Queue | Interruption queue para Spot |
 | EventBridge | Regras para eventos de interrupção/rebalanceamento |
 
+## Recursos fora do Terraform (gerenciados pelo setup-oidc.sh)
+
+| Recurso | Descrição |
+|---|---|
+| OIDC Provider (GitHub) | `token.actions.githubusercontent.com` |
+| IAM Role `eks-lab-github-actions` | Assumida pelo GitHub Actions via OIDC |
+| IAM Policy `eks-lab-github-actions` | Permissões para criar/destruir a infra |
+
+> Estes recursos **não são destruídos** pelo `terraform destroy`.
+> Para removê-los, use o console AWS ou a CLI manualmente.
+
+---
+
+## Fluxo de CI/CD
+
+```
+push em branch  →  auto-pr.yml cria PR automaticamente
+                           ↓
+              PR aberto  →  terraform-apply.yml executa plan
+                              (resultado comentado no PR)
+                           ↓
+              merge na main  →  terraform-apply.yml executa apply
+
+              workflow_dispatch  →  terraform-destroy.yml
+                                    (requer confirmação "destruir")
+```
+
+Autenticação: **OIDC** — sem `AWS_ACCESS_KEY_ID` ou `AWS_SECRET_ACCESS_KEY`.
+
+---
+
 ## Destruir a infraestrutura
 
 ```bash
-# Remove todos os recursos (cuidado: irreversível)
 terraform destroy
 ```
 
 > **Atenção:** O NAT Gateway e o EKS cluster geram custo mesmo parados.
 > Destrua o ambiente quando não estiver em uso.
-
-## Git
-
-```bash
-# Inicializar repositório
-git init
-git add .
-git commit -m "feat: infraestrutura EKS lab com Karpenter"
-
-# Conectar a um repositório remoto
-git remote add origin https://github.com/seu-usuario/eks-lab.git
-git push -u origin main
-```
-# eks-lab
+>
+> Os recursos de OIDC do GitHub Actions **não serão destruídos** — foram criados
+> fora do Terraform intencionalmente.

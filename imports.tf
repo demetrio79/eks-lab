@@ -6,16 +6,6 @@
 # ============================================================
 
 import {
-  to = aws_iam_openid_connect_provider.github
-  id = "arn:aws:iam::688066489200:oidc-provider/token.actions.githubusercontent.com"
-}
-
-import {
-  to = aws_iam_role.github_actions
-  id = "eks-lab-github-actions"
-}
-
-import {
   to = aws_iam_openid_connect_provider.eks
   id = "arn:aws:iam::688066489200:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/20EA3604630A97E17B03475684C30DC8"
 }
