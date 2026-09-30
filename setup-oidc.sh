@@ -169,7 +169,8 @@ POLICY_DOC=$(cat <<EOF
         "iam:GetOpenIDConnectProvider", "iam:ListOpenIDConnectProviders",
         "iam:TagOpenIDConnectProvider",
         "iam:TagRole", "iam:TagPolicy", "iam:TagInstanceProfile",
-        "iam:PassRole"
+        "iam:PassRole",
+        "iam:CreateServiceLinkedRole"
       ],
       "Resource": ["*"]
     },
@@ -212,7 +213,22 @@ EOF
 )
 
 if aws iam get-policy --policy-arn "${POLICY_ARN}" > /dev/null 2>&1; then
-  echo "    ✅ IAM Policy já existe — nenhuma alteração necessária."
+  echo "    Policy já existe — criando nova versão com permissões atualizadas..."
+  aws iam create-policy-version \
+    --policy-arn "${POLICY_ARN}" \
+    --policy-document "${POLICY_DOC}" \
+    --set-as-default \
+    > /dev/null
+
+  # Limpar versões antigas (IAM permite no máximo 5 versões)
+  OLD_VERSIONS=$(aws iam list-policy-versions \
+    --policy-arn "${POLICY_ARN}" \
+    --query 'Versions[?!IsDefaultVersion].VersionId' \
+    --output text)
+  for v in $OLD_VERSIONS; do
+    aws iam delete-policy-version --policy-arn "${POLICY_ARN}" --version-id "$v"
+  done
+  echo "    ✅ IAM Policy atualizada: ${POLICY_ARN}"
 else
   echo "    Criando IAM Policy..."
   aws iam create-policy \
